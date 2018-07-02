@@ -61,15 +61,14 @@ def safetySupervisor(temperature, rpm, torque):
 def saveData(type, data):
     savedData.append([type, data])
 
-def csvWriter():
-    pass
-    '''
+def csvWriter(sysMsgData, tempData, rpmData, torqueData):
     with open('Dyno_Test.csv','w',newline='') as csvfile:
-        writer = csv.writer(csvfile, delimiter=' ', quotechar='|', qouting=csv.QUOTE_MINIMAL)
-        writer.writerow([tempData[0],rpmData[0],torqueData[0],])
-    '''
+        fwriter = csv.writer(csvfile)
+        fwriter.writerow(['Temperature', 'Rpm', 'Torque', 'System Message'])
+        for cycle in range(len(tempData)):
+            fwriter.writerow([tempData[cycle], rpmData[cycle], torqueData[cycle], sysMsgData[cycle]])
 
-def retreiveData():
+def sortData():
     sysMsgData, tempData, rpmData, torqueData = [],[],[],[]
     for data in savedData:
         if data[0] == 1:
@@ -80,11 +79,12 @@ def retreiveData():
             torqueData.append(data[1])
         elif data[0] == 4:
             sysMsgData.append(data[1])
+    csvWriter(sysMsgData, tempData, rpmData, torqueData)
     printTable(sysMsgData, tempData, rpmData, torqueData)
     
 def printTable(sysMsgData, tempData, rpmData, torqueData):
     print ('{:-^50}'.format(' Recorded Data '))
-    columnNames = ['Temp' , 'Rpm' , 'Torque', 'System Message']
+    columnNames = ['Temp', 'Rpm', 'Torque', 'System Message']
     row_format = '{:<9}' * (len(columnNames)+1)
     print (row_format.format('Cycle',*columnNames))
     for cycle in range(cycles):
@@ -122,21 +122,18 @@ def systemSupervisor():
         for arg in tempTestList:
             t = threading.Thread(target=pollSensor,args=(arg[0],arg[1],arg[2], data_queue))
             t.start()
-
         # Sleeps for one second
         time.sleep(0.1)
         if threading.active_count() <= 1:
             temperature = data_queue.get()
-            
             torque = data_queue.get()
             rpm = data_queue.get()
             error = safetySupervisor(temperature, rpm, torque)
             saveData(4,error['msg'])
-            
         if error['type'] == 0:
             run = False
     print("!!! Dyno Stopped ("+str(error['msg'])+") on cycle",cycles,"\n" )
-    retreiveData()
+    sortData()
     # CAN.deinit() # Turns off the can controller
 
 # runs the in the setup stage when the BB boots
