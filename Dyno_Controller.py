@@ -6,11 +6,12 @@
 
 import random
 import threading
+import queue
 import time
 import csv
 # from pyb import CAN, SPI
 
-def getData(type, length, step):
+def getData(length, step):
     data = random.randrange(0, length, step)
     return data
 
@@ -34,24 +35,27 @@ def canBusCommunicator():
     CAN.recv(0)                 # receive message on FIFO 0
     '''
 
-def safetySupervisor():
+def safetySupervisor(temperature, rpm, torque):
     tempCutOff = 180
-    rpmCutOff = 10000
+    rpmCutOff = 5000
     torqCutOff = 2500
-    CutOffPercent = 0.8
+    CutOffPercent = 0.9
     systemMessage = {'type':-1,'msg':''}
-    if temperature > tempCutOff:
-        systemMessage = {'type':0,'msg':'!!! Temperature exceeded 180 degrees'}
-    elif rpm > rpmCutOff:
-        systemMessage = {'type':0,'msg':'!!! Revolutions exceeded 10,000 per minute'}
-    elif torque > torqCutOff:
-        systemMessage = {'type':0,'msg':'!!! Torque exceeded 2,500 newtons'}
-    elif temperature > tempCutOff*CutOffPercent:
-        systemMessage = {'type':1,'msg':'*** Temperature exceeded ' + str(int(CutOffPercent*100)) + '% of Cut off'}
-    elif rpm > rpmCutOff*CutOffPercent:
-        systemMessage = {'type':1,'msg':'*** RPM exceeded ' + str(int(CutOffPercent*100)) + '% of Cut off'}
-    elif torque > torqCutOff*CutOffPercent:
-        systemMessage = {'type':1,'msg':'*** Torque exceeded ' + str(int(CutOffPercent*100)) + '% of Cut off'}
+    if temperature == -1 or rpm == -1 or torque == -1:
+        error = {'type':0,'msg':'!!! A sensor failed to return data'}
+    else:
+        if temperature > tempCutOff:
+            systemMessage = {'type':0,'msg':'!!! Temperature exceeded '+str(tempCutOff)+' degrees'}
+        elif rpm > rpmCutOff:
+            systemMessage = {'type':0,'msg':'!!! Revolutions exceeded '+str(rpmCutOff)+' per minute'}
+        elif torque > torqCutOff:
+            systemMessage = {'type':0,'msg':'!!! Torque exceeded '+str(torqCutOff)+' newtons'}
+        elif temperature > tempCutOff*CutOffPercent:
+            systemMessage = {'type':1,'msg':'*** Temperature exceeded '+str(int(CutOffPercent*100))+'% of Cut off'}
+        elif rpm > rpmCutOff*CutOffPercent:
+            systemMessage = {'type':1,'msg':'*** RPM exceeded '+str(int(CutOffPercent*100))+'% of Cut off'}
+        elif torque > torqCutOff*CutOffPercent:
+            systemMessage = {'type':1,'msg':'*** Torque exceeded '+str(int(CutOffPercent*100))+'% of Cut off'}
     return systemMessage
 
 def saveData(type, data):
@@ -79,17 +83,21 @@ def retreiveData():
     printTable(sysMsgData, tempData, rpmData, torqueData)
     
 def printTable(sysMsgData, tempData, rpmData, torqueData):
-    print ('{:-^36}'.format(' Recorded Data '))
+    print ('{:-^50}'.format(' Recorded Data '))
     columnNames = ['Temp' , 'Rpm' , 'Torque', 'System Message']
     row_format = '{:<9}' * (len(columnNames)+1)
     print (row_format.format('Cycle',*columnNames))
     for cycle in range(cycles):
         row = [tempData[cycle], rpmData[cycle], torqueData[cycle], sysMsgData[cycle]]
         print (row_format.format(cycle+1, *row))
-        
-            
+
+def pollSensor(length, step, sensor, out_queue):
+    data = getData(length, step)
+    out_queue.put(data, sensor)
+    saveData(sensor, data)
+
 def systemSupervisor():
-    global temperature, rpm, torque, savedData, cycles, go
+    global savedData, cycles, go
     cycles, savedData, go = 0, [], 'n'
     '''
     # CAN bus stuff
@@ -106,28 +114,37 @@ def systemSupervisor():
         canState = CAN.state()
     '''
     run = True
+    tempTestList = [[200,10,1],[6000,100,2],[2800,100,3]]
     while run:
-        temperature = getData("i",200,10)
-        rpm = getData("i",1100,100)
-        torque = getData("i",2800,100)
-        saveData(1,temperature)
-        saveData(2,rpm)
-        saveData(3,torque)
-        error = safetySupervisor()
-        saveData(4,error['msg'])
         cycles +=1
+        data_queue = queue.PriorityQueue()
+        temperature, rpm, torque = -1,-1,-1
+        for arg in tempTestList:
+            t = threading.Thread(target=pollSensor,args=(arg[0],arg[1],arg[2], data_queue))
+            t.start()
+
+        # Sleeps for one second
+        time.sleep(0.1)
+        if threading.active_count() <= 1:
+            temperature = data_queue.get()
+            
+            torque = data_queue.get()
+            rpm = data_queue.get()
+            error = safetySupervisor(temperature, rpm, torque)
+            saveData(4,error['msg'])
+            
         if error['type'] == 0:
             run = False
-    print("!!! Dyno Stopped (", error['msg'],") on cycle",cycles,"\n" )
+    print("!!! Dyno Stopped ("+str(error['msg'])+") on cycle",cycles,"\n" )
     retreiveData()
     # CAN.deinit() # Turns off the can controller
 
 # runs the in the setup stage when the BB boots
 def systemSetup():
-    global temperature, rpm, torque, savedData, cycles, go
+    global savedData, cycles, go
     go = input('\nRun New Test? (y or n)' )
     while go == 'y':
-        print("Commecing Test\n")
+        print("\nCommecing Test")
         systemSupervisor()
         go = input('\nRun New Test? (y or n) ')
     print("Dyno testing ended by user")
