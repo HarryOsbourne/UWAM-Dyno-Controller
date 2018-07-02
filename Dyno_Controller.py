@@ -1,5 +1,4 @@
 # TODO List
-# systemMessages
 # Watchdog
 # Dead mans switch (Back up for watchdog)
 # Export to CSV file for test (single then for all)
@@ -42,17 +41,17 @@ def safetySupervisor():
     CutOffPercent = 0.8
     systemMessage = {'type':-1,'msg':''}
     if temperature > tempCutOff:
-        systemMessage = {'type':0,'msg':'!!! Temperature exceeded 180 degrees !!!'}
+        systemMessage = {'type':0,'msg':'!!! Temperature exceeded 180 degrees'}
     elif rpm > rpmCutOff:
-        systemMessage = {'type':0,'msg':'!!! Revolutions exceeded 10,000 per minute !!!'}
+        systemMessage = {'type':0,'msg':'!!! Revolutions exceeded 10,000 per minute'}
     elif torque > torqCutOff:
-        systemMessage = {'type':0,'msg':'!!! Torque exceeded 2,500 newtons !!!'}
+        systemMessage = {'type':0,'msg':'!!! Torque exceeded 2,500 newtons'}
     elif temperature > tempCutOff*CutOffPercent:
-        systemMessage = {'type':1,'msg':'!!! Temperature exceeded ' + str(int(CutOffPercent*100)) + '% of Cut off !!!'}
+        systemMessage = {'type':1,'msg':'*** Temperature exceeded ' + str(int(CutOffPercent*100)) + '% of Cut off'}
     elif rpm > rpmCutOff*CutOffPercent:
-        systemMessage = {'type':1,'msg':'!!! RPM exceeded ' + str(int(CutOffPercent*100)) + '% of Cut off !!!'}
+        systemMessage = {'type':1,'msg':'*** RPM exceeded ' + str(int(CutOffPercent*100)) + '% of Cut off'}
     elif torque > torqCutOff*CutOffPercent:
-        systemMessage = {'type':1,'msg':'!!! Torque exceeded ' + str(int(CutOffPercent*100)) + '% of Cut off !!!'}
+        systemMessage = {'type':1,'msg':'*** Torque exceeded ' + str(int(CutOffPercent*100)) + '% of Cut off'}
     return systemMessage
 
 def saveData(type, data):
@@ -81,14 +80,13 @@ def retreiveData():
     
 def printTable(sysMsgData, tempData, rpmData, torqueData):
     print ('{:-^36}'.format(' Recorded Data '))
-    columnNames = ['Temp' , 'Rpm' , 'Torque']
+    columnNames = ['Temp' , 'Rpm' , 'Torque', 'System Message']
     row_format = '{:<9}' * (len(columnNames)+1)
     print (row_format.format('Cycle',*columnNames))
     for cycle in range(cycles):
-        row = [tempData[cycle], rpmData[cycle], torqueData[cycle]]
+        row = [tempData[cycle], rpmData[cycle], torqueData[cycle], sysMsgData[cycle]]
         print (row_format.format(cycle+1, *row))
-        if sysMsgData[cycle] != '':
-            print ('{:<}'.format(sysMsgData[cycle]))
+        
             
 def systemSupervisor():
     global temperature, rpm, torque, savedData, cycles, go
@@ -116,10 +114,7 @@ def systemSupervisor():
         saveData(2,rpm)
         saveData(3,torque)
         error = safetySupervisor()
-        if error['type'] != -1:
-            saveData(4,error['msg'])
-        else:
-            saveData(4,'')
+        saveData(4,error['msg'])
         cycles +=1
         if error['type'] == 0:
             run = False
