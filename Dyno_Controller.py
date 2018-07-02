@@ -1,6 +1,5 @@
 # TODO List
-# systemMessageings
-# Threading of sensor readings
+# systemMessages
 # Watchdog
 # Dead mans switch (Back up for watchdog)
 # Export to CSV file for test (single then for all)
@@ -9,6 +8,7 @@
 import random
 import threading
 import time
+import csv
 # from pyb import CAN, SPI
 
 def getData(type, length, step):
@@ -35,31 +35,39 @@ def canBusCommunicator():
     CAN.recv(0)                 # receive message on FIFO 0
     '''
 
-def safetySupervisor(): # returns true if safe to continue the test
+def safetySupervisor():
     tempCutOff = 180
     rpmCutOff = 10000
     torqCutOff = 2500
     CutOffPercent = 0.8
-    systemMessage = []
-    if temperature >= tempCutOff:
-        systemMessage = [0,"!!! Temperature exceeded 180 degrees !!!"]
-    elif rpm >= rpmCutOff:
-        systemMessage = [0,"!!! Revolutions exceeded 10,000 per minute !!!"]
-    elif torque >= torqCutOff:
-        systemMessage = [0,"!!! Torque exceeded 2,500 newtons !!!"]
-    # elif temperature > tempCutOff*CutOffPercent:
-    #     systemMessage = [1,"!!! Temperature exceeded " + str(int(CutOffPercent*100)) + "% of Cut off !!!"]
-    # elif rpm > rpmCutOff*CutOffPercent:
-    #     systemMessage = [1,"!!! RPM exceeded " + str(int(CutOffPercent*100)) + "% of Cut off !!!"]
-    # elif torque > torqCutOff*CutOffPercent:
-    #     systemMessage = [1,"!!! Torque exceeded " + str(int(CutOffPercent*100)) + "% of Cut off !!!"]
+    systemMessage = {'type':-1,'msg':''}
+    if temperature > tempCutOff:
+        systemMessage = {'type':0,'msg':'!!! Temperature exceeded 180 degrees !!!'}
+    elif rpm > rpmCutOff:
+        systemMessage = {'type':0,'msg':'!!! Revolutions exceeded 10,000 per minute !!!'}
+    elif torque > torqCutOff:
+        systemMessage = {'type':0,'msg':'!!! Torque exceeded 2,500 newtons !!!'}
+    elif temperature > tempCutOff*CutOffPercent:
+        systemMessage = {'type':1,'msg':'!!! Temperature exceeded ' + str(int(CutOffPercent*100)) + '% of Cut off !!!'}
+    elif rpm > rpmCutOff*CutOffPercent:
+        systemMessage = {'type':1,'msg':'!!! RPM exceeded ' + str(int(CutOffPercent*100)) + '% of Cut off !!!'}
+    elif torque > torqCutOff*CutOffPercent:
+        systemMessage = {'type':1,'msg':'!!! Torque exceeded ' + str(int(CutOffPercent*100)) + '% of Cut off !!!'}
     return systemMessage
 
 def saveData(type, data):
     savedData.append([type, data])
 
+def csvWriter():
+    pass
+    '''
+    with open('Dyno_Test.csv','w',newline='') as csvfile:
+        writer = csv.writer(csvfile, delimiter=' ', quotechar='|', qouting=csv.QUOTE_MINIMAL)
+        writer.writerow([tempData[0],rpmData[0],torqueData[0],])
+    '''
+
 def retreiveData():
-    errorData, tempData, rpmData, torqueData = [],[],[],[]
+    sysMsgData, tempData, rpmData, torqueData = [],[],[],[]
     for data in savedData:
         if data[0] == 1:
             tempData.append(data[1])
@@ -67,10 +75,11 @@ def retreiveData():
             rpmData.append(data[1])
         elif data[0] == 3:
             torqueData.append(data[1])
-        elif data[0] == 0:
-            errorData.append(data[1])
+        elif data[0] == 4:
+            sysMsgData.append(data[1])
+    printTable(sysMsgData, tempData, rpmData, torqueData)
     
-    # Table outputting
+def printTable(sysMsgData, tempData, rpmData, torqueData):
     print ('{:-^36}'.format(' Recorded Data '))
     columnNames = ['Temp' , 'Rpm' , 'Torque']
     row_format = '{:<9}' * (len(columnNames)+1)
@@ -78,12 +87,12 @@ def retreiveData():
     for cycle in range(cycles):
         row = [tempData[cycle], rpmData[cycle], torqueData[cycle]]
         print (row_format.format(cycle+1, *row))
-        if errorData[cycle] != []:
-            print ('{:<}'.format(errorData[cycle][1]))
-    print ('{:<}'.format(errorData[len(errorData)-1][1]))
+        if sysMsgData[cycle] != '':
+            print ('{:<}'.format(sysMsgData[cycle]))
             
 def systemSupervisor():
     global temperature, rpm, torque, savedData, cycles, go
+    cycles, savedData, go = 0, [], 'n'
     '''
     # CAN bus stuff
     canState = CAN.state()
@@ -98,7 +107,8 @@ def systemSupervisor():
             print("The controller is on and in the Error Passive state (at least one of TEC or REC is 128 or greater)")
         canState = CAN.state()
     '''
-    while True:
+    run = True
+    while run:
         temperature = getData("i",200,10)
         rpm = getData("i",1100,100)
         torque = getData("i",2800,100)
@@ -106,24 +116,25 @@ def systemSupervisor():
         saveData(2,rpm)
         saveData(3,torque)
         error = safetySupervisor()
-        saveData(0,error)
+        if error['type'] != -1:
+            saveData(4,error['msg'])
+        else:
+            saveData(4,'')
         cycles +=1
-        if error != [] and error[0] == 0:
-            print("!!! Dyno Stopped")
-            break
-    print("!!! Dyno Stopped (", error[1],")\n" )
+        if error['type'] == 0:
+            run = False
+    print("!!! Dyno Stopped (", error['msg'],") on cycle",cycles,"\n" )
     retreiveData()
     # CAN.deinit() # Turns off the can controller
 
 # runs the in the setup stage when the BB boots
 def systemSetup():
     global temperature, rpm, torque, savedData, cycles, go
-    cycles, savedData, go = 0, [], 'n'
-    go = input('\n Run New Test? (y or n)')
+    go = input('\nRun New Test? (y or n)' )
     while go == 'y':
-        print("Commecing Test")
+        print("Commecing Test\n")
         systemSupervisor()
-        go = input('\n Run New Test? (y or n)')
+        go = input('\nRun New Test? (y or n) ')
     print("Dyno testing ended by user")
 
 systemSetup()
