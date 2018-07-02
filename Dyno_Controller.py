@@ -122,17 +122,14 @@ def systemSupervisor():
         for arg in tempTestList:
             t = threading.Thread(target=pollSensor,args=(arg[0],arg[1],arg[2], data_queue))
             t.start()
-
         # Sleeps for one second
-        time.sleep(0.1)
+        time.sleep(1)
         if threading.active_count() <= 1:
             temperature = data_queue.get()
-            
             torque = data_queue.get()
             rpm = data_queue.get()
             error = safetySupervisor(temperature, rpm, torque)
             saveData(4,error['msg'])
-            
         if error['type'] == 0:
             run = False
     print("!!! Dyno Stopped ("+str(error['msg'])+") on cycle",cycles,"\n" )
