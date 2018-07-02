@@ -123,7 +123,7 @@ def systemSupervisor():
             t = threading.Thread(target=pollSensor,args=(arg[0],arg[1],arg[2], data_queue))
             t.start()
         # Sleeps for one second
-        time.sleep(0.1)
+        time.sleep(1)
         if threading.active_count() <= 1:
             temperature = data_queue.get()
             torque = data_queue.get()
